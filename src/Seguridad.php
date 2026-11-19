@@ -18,7 +18,9 @@ final class Seguridad
 
     private static function vieneDeProxy(): bool
     {
-        return in_array($_SERVER['REMOTE_ADDR'] ?? '', EDUNEX_PROXIES, true);
+        // '*' = confiar en el proxy de la plataforma (Render, por ejemplo), cuando el contenedor
+        // solo se puede alcanzar a través de ese proxy y no directo desde internet.
+        return in_array('*', EDUNEX_PROXIES, true) || in_array($_SERVER['REMOTE_ADDR'] ?? '', EDUNEX_PROXIES, true);
     }
 
     /** IP de quien hace la petición. Solo se cree X-Forwarded-For si viene de un proxy

@@ -20,11 +20,19 @@ declare(strict_types=1);
  */
 final class Nucleo
 {
+    // Carreras del campus que pueden registrarse (lista dada por la Coordinación).
+    public const ISC = 'Ingeniería en Sistemas Computacionales';
     public const CARRERAS = [
-        'Ing. en Sistemas Computacionales', 'Ing. Industrial', 'Ing. en Gestión Empresarial',
-        'Ing. Civil', 'Ing. Electromecánica',
+        'Contador Público', 'Ingeniería Civil', 'Ingeniería en Gestión Empresarial',
+        'Ingeniería Industrial', self::ISC,
     ];
     public const GRUPOS = ['A', 'B', 'C'];                 // El grupo indica el turno.
+
+    /** Grupos que existen en cada carrera: Sistemas solo tiene A y B. */
+    public static function gruposDe(string $carrera): array
+    {
+        return $carrera === self::ISC ? ['A', 'B'] : self::GRUPOS;
+    }
     public const NIVELES = ['A1', 'A2', 'B1', 'B2', 'C1'];
     public const CUOTA = 500;                              // Pesos. Clave A003-007-003-000.
     private const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio',
@@ -174,6 +182,8 @@ final class Nucleo
         }
         if (!in_array($d['grupo'] ?? '', self::GRUPOS, true)) {
             $e['grupo'] = 'Elige tu grupo de la lista.';
+        } elseif (in_array($d['carrera'] ?? '', self::CARRERAS, true) && !in_array($d['grupo'], self::gruposDe($d['carrera']), true)) {
+            $e['grupo'] = $d['carrera'] . ' solo tiene grupos ' . implode(' y ', self::gruposDe($d['carrera'])) . '. Revisa tu grupo.';
         }
         if (strcmp(self::hoy($st), $st['conv']['cierre']) > 0) {
             $e['general'] = 'El registro cerró el ' . self::fechaTexto($st['conv']['cierre']) . '. Ya no se aceptan más registros.';
@@ -210,7 +220,8 @@ final class Nucleo
         return $r['pub'] ? 'Nivel disponible' : $r['st'];
     }
 
-    /** Devuelve SOLO estatus y nivel, y solo si control y código coinciden. */
+    /** Devuelve los datos del propio aspirante (nombre, carrera, grupo, estatus y nivel),
+     *  y solo si control y código coinciden. Nunca devuelve datos de otra persona. */
     public static function consultar(array $st, string $control, string $codigo): ?array
     {
         $codigo = strtoupper(trim($codigo));
@@ -220,7 +231,8 @@ final class Nucleo
             return null;
         }
         $r = $st['regs'][$i];
-        return ['estatus' => self::estatusDe($r), 'nivel' => $r['pub'] ? $r['niv'] : ''];
+        return ['nombre' => $r['n'], 'carrera' => $r['ca'], 'grupo' => $r['g'],
+            'estatus' => self::estatusDe($r), 'nivel' => $r['pub'] ? $r['niv'] : ''];
     }
 
     /* ------------------------------------------------------------------ CSV */
@@ -229,6 +241,17 @@ final class Nucleo
     {
         $s = mb_strtolower(trim($s));
         return strtr($s, ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u', 'ü' => 'u', 'ñ' => 'n']);
+    }
+
+    /** Acepta fechas como las escribe Excel en español (30/11/2026) y las pasa a 2026-11-30.
+     *  Corresponde al defecto D2 del libro. Si no reconoce el formato, la deja igual. */
+    public static function normalizarFecha(string $f): string
+    {
+        $f = trim($f);
+        if (preg_match('#^(\d{1,2})/(\d{1,2})/(\d{4})$#', $f, $m) && checkdate((int) $m[2], (int) $m[1], (int) $m[3])) {
+            return sprintf('%04d-%02d-%02d', $m[3], $m[2], $m[1]);
+        }
+        return $f;
     }
 
     /** Lee un CSV separado por comas o por punto y coma (Excel en español usa ;). */
@@ -287,6 +310,7 @@ final class Nucleo
         $ok = 0;
         $exc = 0;
         foreach ($p['rows'] as $f) {
+            $f['fecha'] = self::normalizarFecha((string) $f['fecha']);
             $ref = $f['referencia'];
             $limpio = preg_replace('/[$,\s]/', '', (string) $f['monto']);
             $monto = is_numeric($limpio) ? (float) $limpio : null;
@@ -351,6 +375,28 @@ final class Nucleo
         array_splice($st['exc'], $k, 1);
         self::aviso($st, 'pago', $st['regs'][$i]['c'], 'Pago confirmado. Ya estás en la lista del examen.');
         return ['ok' => true, 'rec' => $st['regs'][$i]];
+    }
+
+    /** Aspirantes sugeridos para una excepción de pago: primero el dueño de esa referencia
+     *  (monto distinto o fuera de ventana) o quien tiene una referencia casi igual
+     *  (solo cambia el último dígito); después el resto de los que no han pagado. */
+    public static function sugeridos(array $st, array $exc, int $max = 100): array
+    {
+        $ref = (string) ($exc['ref'] ?? '');
+        $arriba = [];
+        $resto = [];
+        foreach ($st['regs'] as $r) {
+            if ($r['st'] === 'Pagado') {
+                continue;
+            }
+            $parecida = $ref !== '' && ($r['ref'] === $ref || (strlen($ref) === strlen($r['ref']) && substr($ref, 0, -1) === substr($r['ref'], 0, -1)));
+            if ($parecida) {
+                $arriba[] = $r + ['sugerido' => true];
+            } else {
+                $resto[] = $r + ['sugerido' => false];
+            }
+        }
+        return array_slice(array_merge($arriba, $resto), 0, $max);
     }
 
     /* ------------------------------------------------------------------ resultados
@@ -556,6 +602,9 @@ final class Nucleo
             $nom = $pick(self::NOM) . ' ' . $pick(self::APE) . ' ' . $pick(self::APE);
             $car = $pick(self::CARRERAS);
             $gru = $pick(self::GRUPOS);
+            if (!in_array($gru, self::gruposDe($car), true)) {
+                $gru = 'B';      // Sistemas no tiene grupo C (se ajusta sin cambiar la secuencia de datos)
+            }
             $st['regs'][] = self::nuevoReg($st, (string) $c, $nom, $car, $gru, self::codigo($r), false);
         }
     }
@@ -584,6 +633,12 @@ final class Nucleo
             $filas[39]['fecha'] = self::sumarDias($st['conv']['payTo'], 3);
         }
         return self::aCSV([['referencia', 'referencia'], ['monto', 'monto'], ['fecha', 'fecha']], $filas);
+    }
+
+    /** Tabla de registros (lo que ya está en el sistema), para comparar con los otros dos archivos. */
+    public static function aspirantesCSV(array $st): string
+    {
+        return self::aCSV([['c', 'control'], ['n', 'nombre'], ['ca', 'carrera'], ['g', 'grupo'], ['ref', 'referencia'], ['code', 'codigo']], $st['regs']);
     }
 
     public static function resultadosEjemploCSV(array $st, int $semilla = 7): string

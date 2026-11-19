@@ -12,7 +12,7 @@ date_default_timezone_set('America/Mexico_City');
 // descargar escribiendo su dirección en el navegador.
 define('EDUNEX_DATOS', getenv('EDUNEX_DATOS') ?: dirname(__DIR__) . '/datos');
 
-// Proxies de confianza (por ejemplo, Caddy dentro de Docker). Solo si la petición llega
+// Proxies de confianza (por ejemplo, Caddy dentro de Docker; en Render se usa '*'). Solo si la petición llega
 // desde uno de estos, se cree el encabezado X-Forwarded-For para saber la IP real.
 define('EDUNEX_PROXIES', array_filter(array_map('trim', explode(',', getenv('EDUNEX_PROXIES') ?: ''))));
 

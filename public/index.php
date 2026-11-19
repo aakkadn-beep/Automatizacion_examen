@@ -67,6 +67,34 @@ function archivoSubido(): ?string
     return $t;
 }
 
+/** Envía un registro al flujo A de Power Automate (si está configurado) y anota el resultado. */
+function enviarRegistroANube(callable $porDefecto, array $rec): void
+{
+    if (!Nube::activa('registro')) {
+        return;
+    }
+    $r = Nube::enviar('registro', Nube::filaRegistro($rec));
+    $estado = $r['ok'] ? 'ok' : 'error';
+    Almacen::transaccion('estado', $porDefecto, static function (array &$st) use ($rec, $estado) {
+        foreach ($st['regs'] as &$x) {
+            if ($x['c'] === $rec['c']) {
+                $x['sync'] = $estado;
+            }
+        }
+    });
+    Auditoria::registrar('power_automate_registro', $estado, 'control ' . $rec['c'] . ' · HTTP ' . $r['http'] . ' · ' . round($r['ms']) . ' ms' . ($r['error'] ? ' · ' . $r['error'] : ''));
+}
+
+/** Convierte la fila que regresa el flujo B (Excel) en lo que ve el aspirante. */
+function resultadoDesdeExcel(array $fila, ?array $local): array
+{
+    $est = mb_strtolower($fila['estatus'] ?? '');
+    $nivel = strtoupper($fila['nivel'] ?? '');
+    $estatus = $nivel !== '' ? 'Nivel disponible' : ($est === 'pagado' ? 'Pagado' : ($est !== '' ? 'Registrado' : ($local['estatus'] ?? 'Registrado')));
+    return ['nombre' => $fila['nombre'] ?? ($local['nombre'] ?? ''), 'carrera' => $fila['carrera'] ?? ($local['carrera'] ?? ''),
+        'grupo' => $fila['grupo'] ?? ($local['grupo'] ?? ''), 'estatus' => $estatus, 'nivel' => $nivel];
+}
+
 function descargar(string $nombre, string $csv): never
 {
     header('Content-Type: text/csv; charset=utf-8');
@@ -99,6 +127,7 @@ if ($metodo === 'POST') {
                 ir('registro');
             }
             Auditoria::registrar('registro', 'ok', 'control ' . $res['rec']['c'] . ($asistido ? ' (asistido)' : ''));
+            enviarRegistroANube($porDefecto, $res['rec']);
             $_SESSION['hecho'] = $res['rec'];
             ir('registro');
 
@@ -110,8 +139,22 @@ if ($metodo === 'POST') {
                 ir('consulta');
             }
             $c = trim((string) ($_POST['control'] ?? ''));
+            $codigo = strtoupper(trim((string) ($_POST['codigo'] ?? '')));
             $st = Almacen::leer('estado', $porDefecto);
-            $v = Nucleo::consultar($st, $c, (string) ($_POST['codigo'] ?? ''));
+            $local = Nucleo::consultar($st, $c, $codigo);
+            $v = $local;
+            // Si está configurado el flujo B, se pregunta al Excel de la Coordinación (ahí el flujo C marca «pagado»).
+            if (Nube::activa('consulta') && preg_match('/^\d{8}$/', $c) && $codigo !== '') {
+                $r = Nube::enviar('consulta', ['control' => $c, 'codigo' => $codigo]);
+                $fila = $r['ok'] ? Nube::primeraFila($r['datos']) : null;
+                // El código se valida con el que trae el Excel; si el flujo no lo devuelve, con la copia local.
+                $codigoOk = $fila !== null && (isset($fila['codigo']) && $fila['codigo'] !== '' ? hash_equals(strtoupper($fila['codigo']), $codigo) : $local !== null);
+                if ($fila !== null && ($fila['control'] ?? $c) === $c && $codigoOk) {
+                    $v = resultadoDesdeExcel($fila, $local);
+                }
+                Auditoria::registrar('power_automate_consulta', $r['ok'] ? ($fila ? 'ok' : 'sin_fila') : 'error',
+                    'control ' . $c . ' · HTTP ' . $r['http'] . ' · ' . round($r['ms']) . ' ms' . ($r['error'] ? ' · ' . $r['error'] : '') . ($r['ok'] ? '' : ' · se usó la copia del servidor'));
+            }
             if ($v === null) {
                 Seguridad::fallo($clave);
                 Auditoria::registrar('consulta', 'no_coincide', 'control ' . mb_substr($c, 0, 8));
@@ -236,6 +279,27 @@ if ($metodo === 'POST') {
             flash('resultados', 'ok', "Niveles publicados: {$res['publicados']}. Excepciones: {$res['excepciones']}. Cada aspirante ya ve su nivel al consultar su estatus.");
             ir('panel');
 
+        case 'sincronizar':
+            exigirRol($rol, 'panel');
+            if (!Nube::activa('registro')) {
+                flash('nube', 'mal', 'El flujo de registro de Power Automate no está configurado.');
+                ir('panel');
+            }
+            $st = Almacen::leer('estado', $porDefecto);
+            $ok = 0;
+            $mal = 0;
+            foreach (array_filter($st['regs'], static fn ($x) => ($x['sync'] ?? '') !== 'ok') as $rec) {
+                enviarRegistroANube($porDefecto, $rec);
+                $ahora = Almacen::leer('estado', $porDefecto);
+                $x = current(array_filter($ahora['regs'], static fn ($y) => $y['c'] === $rec['c']));
+                ($x && ($x['sync'] ?? '') === 'ok') ? $ok++ : $mal++;
+                if ($ok + $mal >= 100) {
+                    break;      // de 100 en 100 para no tardar demasiado
+                }
+            }
+            flash('nube', $mal ? 'aviso' : 'ok', "Enviados al Excel: $ok. Con error: $mal.");
+            ir('panel');
+
         case 'recordatorio':
             exigirRol($rol, 'panel');
             $res = Almacen::transaccion('estado', $porDefecto, static fn (array &$st) => Nucleo::enviarRecordatorio($st));
@@ -287,12 +351,17 @@ switch ($r) {
         echo Vistas::css();
         exit;
 
+    case 'wire':
+        $_SESSION['wire'] = empty($_SESSION['wire']);
+        $v = preg_replace('/[^a-z]/', '', (string) ($_GET['v'] ?? 'inicio'));
+        ir(array_key_exists($v, Nucleo::VISTAS) || $v === 'pruebas' ? $v : 'inicio');
+
     case 'inicio':
-        echo Vistas::pagina('Inicio', 'inicio', Vistas::inicio($rol), $rol);
+        echo Vistas::pagina('Inicio', 'inicio', Vistas::inicio(Almacen::leer('estado', $porDefecto), $rol), $rol);
         exit;
 
     case 'ayuda':
-        echo Vistas::pagina('Ayuda', 'ayuda', Vistas::ayuda(), $rol);
+        echo Vistas::pagina('Ayuda', 'ayuda', Vistas::ayuda(Almacen::leer('estado', $porDefecto)), $rol);
         exit;
 
     case 'registro':
@@ -365,6 +434,16 @@ switch ($r) {
                 exigirRol($rol, 'caja');
                 Auditoria::registrar('descarga', 'ok', 'reporte para caja');
                 descargar('reporte_para_caja.csv', Nucleo::aCSV(Nucleo::COLS['caja'], Nucleo::reporteCaja($st)));
+            case 'ejpagos':
+                exigirRol($rol, 'panel');
+                descargar('pagos_ejemplo.csv', Nucleo::pagosEjemploCSV($st, 60, true));
+            case 'ejresultados':
+                exigirRol($rol, 'panel');
+                descargar('resultados_ejemplo.csv', Nucleo::resultadosEjemploCSV($st, 7));
+            case 'aspirantes':
+                exigirRol($rol, 'panel');
+                Auditoria::registrar('descarga', 'ok', 'tabla de registros');
+                descargar('registros.csv', Nucleo::aspirantesCSV($st));
             case 'auditoria':
                 exigirRol($rol, 'auditoria');
                 descargar('bitacora_auditoria.csv', Nucleo::aCSV(Auditoria::COLS, Auditoria::ultimos(100000)));

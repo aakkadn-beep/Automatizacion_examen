@@ -9,7 +9,7 @@ declare(strict_types=1);
  */
 final class Pruebas
 {
-    private const OK = ['control' => '29990001', 'nombre' => 'Ana Prueba Rivas', 'carrera' => 'Ing. en Sistemas Computacionales', 'grupo' => 'A'];
+    private const OK = ['control' => '29990001', 'nombre' => 'Ana Prueba Rivas', 'carrera' => 'Ingeniería en Sistemas Computacionales', 'grupo' => 'A'];
 
     /** Datos de prueba con la fecha simulada fija, para que el resultado no dependa del día. */
     private static function base(int $n): array
@@ -62,9 +62,12 @@ final class Pruebas
             $s = self::base(0);
             $a = Nucleo::registrar($s, ['carrera' => 'sistemas'] + $OK);
             $b = Nucleo::registrar($s, ['grupo' => 'D'] + $OK);
-            $s2 = self::base(20);
-            $bad = count(array_filter(array_unique(array_column($s2['regs'], 'ca')), static fn ($v) => !in_array($v, Nucleo::CARRERAS, true)));
-            return self::r(!$a['ok'] && !$b['ok'] && $bad === 0, 'Carrera libre: ' . ($a['ok'] ? 'aceptada' : 'rechazada') . '; grupo D: ' . ($b['ok'] ? 'aceptado' : 'rechazado') . '; variantes fuera de catálogo en 20: ' . $bad);
+            $c = Nucleo::registrar($s, ['grupo' => 'C'] + $OK);                              // Sistemas grupo C no existe
+            $d = Nucleo::registrar($s, ['control' => '29990009', 'carrera' => 'Contador Público', 'grupo' => 'C'] + $OK);
+            $s2 = self::base(60);
+            $bad = count(array_filter($s2['regs'], static fn ($r) => !in_array($r['ca'], Nucleo::CARRERAS, true) || !in_array($r['g'], Nucleo::gruposDe($r['ca']), true)));
+            return self::r(!$a['ok'] && !$b['ok'] && !$c['ok'] && $d['ok'] && $bad === 0 && count(Nucleo::CARRERAS) === 5,
+                'Carrera libre: ' . ($a['ok'] ? 'aceptada' : 'rechazada') . '; grupo D: ' . ($b['ok'] ? 'aceptado' : 'rechazado') . '; Sistemas grupo C: ' . ($c['ok'] ? 'aceptado' : 'rechazado («' . ($c['errores']['grupo'] ?? '') . '»)') . '; Contador Público grupo C: ' . ($d['ok'] ? 'aceptado' : 'rechazado') . '; 5 carreras; registros fuera de catálogo en 60: ' . $bad);
         });
         $t('CP-03', 'RF-03', 'Campo vacío o número de control inválido', 'No se guarda y el mensaje dice qué campo corregir', function () use ($OK) {
             $s = self::base(0);
@@ -103,8 +106,11 @@ final class Pruebas
             $s = self::base(60);
             $r = Nucleo::importarPagos($s, Nucleo::pagosEjemploCSV($s, 60, true));
             $pag = count(array_filter($s['regs'], static fn ($x) => $x['st'] === 'Pagado'));
-            return self::r($r['identificados'] === 57 && $r['excepciones'] === 3 && $pag === 57,
-                'Pagado: ' . $pag . '; excepciones: ' . count($s['exc']) . ' (' . implode(', ', array_column($s['exc'], 'tipo')) . ')');
+            // Además: una fecha escrita como la guarda Excel (día/mes/año) también se acepta (defecto D2).
+            $s2 = self::base(1);
+            $d2 = Nucleo::importarPagos($s2, "referencia,monto,fecha\n" . $s2['regs'][0]['ref'] . ",500,30/11/2026\n");
+            return self::r($r['identificados'] === 57 && $r['excepciones'] === 3 && $pag === 57 && $d2['identificados'] === 1,
+                'Pagado: ' . $pag . '; excepciones: ' . count($s['exc']) . ' (' . implode(', ', array_column($s['exc'], 'tipo')) . '); fecha 30/11/2026 aceptada: ' . ($d2['identificados'] === 1 ? 'sí' : 'no'));
         });
         $t('CP-08', 'RF-08', 'Asociar manualmente una excepción', 'El registro asociado cambia a «pagado» y la excepción desaparece', function () {
             $s = self::base(60);
@@ -150,15 +156,15 @@ final class Pruebas
             $tipos = array_column($s['avisos'], 'tipo');
             return self::r(in_array('registro', $tipos, true) && in_array('pago', $tipos, true), 'Avisos generados: ' . implode(', ', $tipos));
         });
-        $t('CP-13', 'RF-13, RNF-05', 'Consulta con código correcto e incorrecto', 'Con el código correcto ve solo estatus y nivel; con uno incorrecto no ve nada', function () use ($OK) {
+        $t('CP-13', 'RF-13, RNF-05', 'Consulta con código correcto e incorrecto', 'Con el código correcto ve sus propios datos (nombre, carrera, grupo, estatus y nivel); con uno incorrecto no ve nada', function () use ($OK) {
             $s = self::base(0);
             $r = Nucleo::registrar($s, $OK);
             $ok = Nucleo::consultar($s, $OK['control'], $r['rec']['code']);
             $mal = Nucleo::consultar($s, $OK['control'], $r['rec']['code'] === 'AAAA' ? 'BBBB' : 'AAAA');
             $campos = $ok ? array_keys($ok) : [];
             sort($campos);
-            return self::r($ok !== null && $mal === null && $campos === ['estatus', 'nivel'],
-                'Campos devueltos: ' . implode(', ', $campos) . '; con código incorrecto: ' . ($mal === null ? 'nada' : 'datos'));
+            return self::r($ok !== null && $mal === null && $campos === ['carrera', 'estatus', 'grupo', 'nivel', 'nombre'] && $ok['nombre'] === $OK['nombre'],
+                'Campos devueltos: ' . implode(', ', $campos) . ' (los del propio aspirante); con código incorrecto: nada');
         });
         $t('CP-14', 'RF-14, RN-07', 'Lista del examen', 'Solo aspirantes con estatus «pagado»', function () {
             $s = self::base(60);
