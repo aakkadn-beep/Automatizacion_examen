@@ -1,0 +1,10 @@
+# Caddy pide el certificado a Let's Encrypt (gratis, dura 90 días) y lo renueva solo.
+# Requisitos: que el DOMINIO apunte (registro DNS tipo A) a la IP pública del servidor
+# y que los puertos 80 y 443 estén abiertos. Todo lo que llegue por http se manda a https.
+{$DOMINIO} {
+	encode gzip
+	reverse_proxy app:80
+	log {
+		output stdout
+	}
+}
