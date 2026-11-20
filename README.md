@@ -11,9 +11,6 @@ bitácora de auditoría en `datos/auditoria.log`.
 
 Interfaz de portal institucional: escudo del Tec, banner con las fechas y botones redondos con ícono.
 
-**Escudo del Tec (obligatorio):** copia el archivo `escudo-tec-matehuala.png` en la carpeta `public/`
-(también sirve `.jpg` o `.svg`). Si falta, el encabezado muestra «TecNM Matehuala» y el panel avisa.
-
 | Pantalla | Quién | Requisitos |
 |---|---|---|
 | Registro | Aspirante | RF-01 a RF-06, RF-12, RF-21, RNF-01 a RNF-05, RN-02, RN-04, RN-08 |
@@ -43,44 +40,18 @@ data/                CSV de ejemplo (60 aspirantes, 60 pagos, 60 resultados)
 Dockerfile, compose.yaml, deploy/Caddyfile   Publicación en la nube con HTTPS
 ```
 
-## Probarlo en una computadora
-
-```bash
-php -S 127.0.0.1:8080 -t public      # abre http://127.0.0.1:8080
-php tests/pruebas.php --csv          # casos de prueba
-```
-
-`127.0.0.1` es la dirección de "esta misma computadora" (loopback): nadie de fuera puede entrar.
-Sirve para desarrollar, no para que lo usen los aspirantes.
-
-En Windows: si aparece `Call to undefined function mb_strtoupper()`, el prototipo ya trae un respaldo,
-pero lo correcto es activar `extension=mbstring` (y `extension=curl`) en `php.ini`.
-
 ## Publicarlo en Render (lo que se usó)
 
-1. Sube el proyecto a GitHub (sin la carpeta `datos/`).
+1. Se sube el proyecto a GitHub.
 2. En Render: **New → Web Service**, conecta el repositorio; Render detecta el `Dockerfile` y lo construye
    (al construir corre los casos de prueba: si uno falla, no se publica).
 3. En **Environment** agrega `EDUNEX_PROXIES` = `*` para que la bitácora guarde la IP real y la sesión
    se marque como segura (Render atiende HTTPS con su propio certificado).
-4. Opcional: `EDUNEX_PA_REGISTRO` y `EDUNEX_PA_CONSULTA` para conectar con Power Automate.
+4. Se uso `EDUNEX_PA_REGISTRO` y `EDUNEX_PA_CONSULTA` para conectar con Power Automate.
 
 Limitaciones del plan gratuito: la instancia se «duerme» sin visitas (tarda en despertar) y no tiene
 disco permanente: los datos guardados en `datos/` se pierden al reiniciar o volver a desplegar.
 Con la conexión a Power Automate, los registros quedan guardados en el Excel.
-
-## Publicarlo en otro servidor con HTTPS propio (Caddy)
-
-1. Renta un servidor Linux con IP pública (por ejemplo AWS EC2, Azure o Google Cloud) e instala Docker.
-2. Compra o consigue un dominio y crea un registro DNS tipo **A** que apunte a la IP pública.
-3. Abre los puertos 80 y 443.
-4. Copia esta carpeta y ejecuta: `DOMINIO=tu.dominio.com docker compose up -d --build`
-5. Caddy pide el certificado a Let's Encrypt (gratis, 90 días, renovación automática) y redirige http → https.
-
-Sin dominio, `DOMINIO=localhost docker compose up -d --build` funciona con un certificado propio que el
-navegador marca como no confiable.
-
-> Estado: el `Dockerfile` ya funcionó en Render. El `compose.yaml` con Caddy no se ha probado.
 
 ## Relación con Power Automate
 
