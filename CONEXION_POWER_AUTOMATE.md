@@ -124,6 +124,7 @@ En Windows, si sale un error de curl, activa `extension=curl` en `php.ini` (igua
 | HTTP 202 y respuesta vacía | El flujo B no tiene la acción **Respuesta** | Agrega **Respuesta** al final con el `value` |
 | Columnas: `ok` | La variable `EDUNEX_PA_CONSULTA` tiene la dirección del flujo A | Copia la dirección del flujo B |
 | Filas recibidas: 0 | El flujo B todavía tiene filtro | Quita la consulta de filtro |
+| HTTP 400 · «Could not find a property named…» | La consulta de filtro usa una columna que no existe (por ejemplo `control`, cuando la tuya es «Número de control») | Quita la consulta de filtro |
 | Columna codigo: NO | La tabla no tiene la columna del código | Agrega la columna `Codigo` |
 | HTTP 401 o 403 | El disparador no permite llamadas de «Cualquiera» | Cambia quién puede desencadenar el flujo |
 
