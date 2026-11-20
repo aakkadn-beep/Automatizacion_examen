@@ -16,17 +16,15 @@ $ruta = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
 $entrada = json_decode((string) file_get_contents('php://input'), true) ?: [];
 header('Content-Type: application/json');
 if ($ruta === '/registro' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $filas[] = $entrada;
+    $filas[] = $entrada;      // el flujo A real pone cada dato en su columna del Excel
     file_put_contents($archivo, json_encode($filas, JSON_UNESCAPED_UNICODE));
     echo json_encode(['ok' => true]);
 } elseif ($ruta === '/consulta' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Igual que el flujo B de la guía: filtra solo por número de control; PHP compara el código.
-    // Con control vacío regresa la tabla completa (para «Traer registros del Excel»).
-    $ctl = $entrada['control'] ?? '';
-    $hall = array_values(array_filter($filas, fn ($f) => $ctl === '' || ($f['control'] ?? '') === $ctl));
-    // Nombres de columna como en Excel (con mayúscula), para probar que el prototipo los entiende.
-    $hall = array_map(fn ($f) => ['Control' => $f['control'], 'Nombre' => $f['nombre'], 'Carrera' => $f['carrera'], 'Grupo' => $f['grupo'],
-        'Estatus' => $f['estatus'], 'Nivel' => $f['nivel'] ?? '', 'Codigo' => $f['codigo']], $hall);
+    // Como el flujo B recomendado: «Enumerar filas» SIN filtro y regresa toda la tabla;
+    // PHP busca la fila del número de control. Encabezados como en el Excel de la autora.
+    $hall = array_map(fn ($f) => ['Número de control' => $f['control'], 'Nombre' => $f['nombre'], 'Carrera' => $f['carrera'],
+        'Grupo' => $f['grupo'], 'Estatus' => $f['estatus'], 'Referencia' => $f['referencia'] ?? '', 'Codigo' => $f['codigo'] ?? '',
+        'Nivel' => $f['nivel'] ?? ''], $filas);
     echo json_encode(['value' => $hall], JSON_UNESCAPED_UNICODE);
 } elseif ($ruta === '/cruce' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // Flujo C: marca «pagado» a quien tenga su referencia en la tabla de pagos simulada
