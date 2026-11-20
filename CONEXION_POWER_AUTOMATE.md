@@ -101,6 +101,7 @@ En Render: tu servicio → **Environment** → **Add Environment Variable**:
 | `EDUNEX_PA_REGISTRO` | la dirección HTTP POST del flujo A |
 | `EDUNEX_PA_CONSULTA` | la dirección HTTP POST del flujo B |
 | `EDUNEX_PA_CRUCE` | opcional: la dirección HTTP POST del flujo C |
+| `EDUNEX_BLOQUEO_MIN` | opcional: minutos de bloqueo tras muchos intentos fallidos (2 por defecto; `0` lo apaga para pruebas) |
 | `EDUNEX_PROXIES` | `*` (Render atiende HTTPS y le pasa la petición al contenedor) |
 
 Guarda y Render vuelve a desplegar. En tu computadora (PowerShell), antes de `php -S`:
@@ -113,6 +114,22 @@ php -S 127.0.0.1:8080 -t public
 En Windows, si sale un error de curl, activa `extension=curl` en `php.ini` (igual que mbstring).
 
 ## 5. Cómo comprobar que funciona
+
+**Primero, en el panel (sección 7), pulsa «Probar conexión con el flujo B».** Debe decir:
+«HTTP 200», «Respuesta reconocida como tabla: sí», el número de filas de tu Excel y
+«Columna control: sí · columna codigo: sí». Si dice **NO**, el flujo B no está regresando las filas:
+
+| Lo que muestra la prueba | Causa probable | Arreglo |
+|---|---|---|
+| HTTP 202 y respuesta vacía | El flujo B no tiene la acción **Respuesta** | Agrega **Respuesta** al final con el `value` |
+| Columnas: `ok` | La variable `EDUNEX_PA_CONSULTA` tiene la dirección del flujo A | Copia la dirección del flujo B |
+| Filas recibidas: 0 | El flujo B todavía tiene filtro | Quita la consulta de filtro |
+| Columna codigo: NO | La tabla no tiene la columna del código | Agrega la columna `Codigo` |
+| HTTP 401 o 403 | El disparador no permite llamadas de «Cualquiera» | Cambia quién puede desencadenar el flujo |
+
+Si la prueba falla, el prototipo usa su propia copia para la consulta y lo anota en la bitácora,
+pero no puede revisar duplicados contra el Excel.
+
 
 1. En el panel, sección **7. Conexión con Power Automate**, los dos flujos deben decir «Conectado».
 2. Regístrate con datos inventados: debe aparecer una fila nueva en la tabla `Registros` del Excel.
