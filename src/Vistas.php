@@ -488,7 +488,7 @@ HTML;
             . '<div class="tabla alta"><table><thead><tr><th>Tipo</th><th>Referencia</th><th>Monto</th><th>Fecha</th><th>Asociar a aspirante</th></tr></thead><tbody>' . $filas . '</tbody></table></div>';
     }
 
-    public static function panel(array $st, array $f, array $flash, ?array $prev, string $urlBase): string
+    public static function panel(array $st, array $f, array $flash, ?array $prev, string $urlBase, ?array $diag = null): string
     {
         $csrf = self::csrf();
         $s = Nucleo::estadisticas($st);
@@ -539,6 +539,8 @@ HTML;
         $sErr = count(array_filter($st['regs'], static fn ($r) => ($r['sync'] ?? '') === 'error'));
         $estado = static fn (bool $b) => $b ? '<span class="pill p-pag">Conectado</span>' : '<span class="pill p-reg">Sin configurar</span>';
         $botonSync = $paR ? '<form method="post" action="?r=sincronizar">' . $csrf . '<button class="btn chico alt" type="submit">Reenviar registros pendientes</button></form>' : '';
+        $botonProbar = $paC ? '<form method="post" action="?r=probarb">' . $csrf . '<button class="btn chico alt" type="submit">Probar conexión con el flujo B</button></form>' : '';
+        $diagHtml = $diag ? '<div class="card mt"><b>Resultado de la prueba del flujo B</b><ul>' . implode('', array_map(static fn ($x) => '<li>' . e($x) . '</li>', $diag)) . '</ul></div>' : '';
         $botonTraer = $paC ? '<form method="post" action="?r=traerexcel">' . $csrf . '<button class="btn chico" type="submit">Traer registros del Excel</button></form>' : '';
         $botonCruce = $paX ? '<form method="post" action="?r=cruceexcel">' . $csrf . '<button class="btn chico" type="submit">Ejecutar cruce de pagos (flujo C)</button></form>' : '';
         $dupl = !empty($st['duplicados']) ? '<div class="err">En el Excel hay números de control repetidos: ' . e(implode(', ', $st['duplicados'])) . '. Borra en el Excel la fila que sobra y pulsa «Traer registros del Excel». Mientras tanto el panel muestra solo una de cada uno.</div>' : '';
@@ -546,7 +548,7 @@ HTML;
         $nube = $dupl . '<div class="kv"><span>Flujo A · Registro → Excel</span>' . $estado($paR) . '</div><div class="kv"><span>Flujo B · Consulta ← Excel</span>' . $estado($paC) . '</div>'
             . '<div class="kv"><span>Flujo C · Cruce de pagos (botón del panel)</span>' . $estado($paX) . '</div>' . $ultima
             . ($con ? '<p class="nota">Con la conexión activa, el panel muestra lo que hay en la tabla Registros del Excel. Si cambias el Excel a mano o corres el flujo C desde Power Automate, pulsa «Traer registros del Excel».</p>' : '')
-            . '<div class="fila">' . $botonTraer . $botonCruce . '</div>'
+            . '<div class="fila">' . $botonTraer . $botonCruce . $botonProbar . '</div>' . $diagHtml
             . ($paR ? '<div class="kv"><span>Registros enviados al Excel</span><b>' . $sOk . ' bien · ' . $sErr . ' con error</b></div>' : '')
             . '<p class="nota">Las direcciones de los flujos se configuran en el servidor (variables EDUNEX_PA_REGISTRO y EDUNEX_PA_CONSULTA), nunca en el código. El cruce de pagos real lo hace el flujo C en Power Automate.</p>' . $botonSync;
 
@@ -604,7 +606,8 @@ HTML;
   <section class="card" id="datos"><h3>8. Datos de prueba</h3>{$avisoDatos}
    <p class="nota">Son tres archivos porque simulan tres fuentes: los <b>registros</b> (lo que ya está en el sistema), el <b>reporte de pagos</b> (lo que entrega caja o el banco) y los <b>resultados</b> (lo que exporta la plataforma del examen, que no controla el Tec). Los de ejemplo se arman con los registros de ahora, así siempre coinciden.</p>
    <div class="fila"><a class="btn alt chico" href="?r=descargar&amp;que=aspirantes">Registros</a><a class="btn alt chico" href="?r=descargar&amp;que=ejpagos">Pagos de ejemplo</a><a class="btn alt chico" href="?r=descargar&amp;que=ejresultados">Resultados de ejemplo</a></div>
-   <form method="post" action="?r=datos" class="fila mt">{$csrf}<button class="btn alt chico" name="n" value="60">Reiniciar con 60</button><button class="btn alt chico" name="n" value="600">Reiniciar con 600</button><button class="btn alt chico" name="n" value="0">Dejar vacío</button><button class="btn alt chico" name="n" value="medir">Medir tiempos</button></form>{$mDatos}</section>
+   <form method="post" action="?r=datos" class="fila mt">{$csrf}<button class="btn alt chico" name="n" value="60">Reiniciar con 60</button><button class="btn alt chico" name="n" value="600">Reiniciar con 600</button><button class="btn alt chico" name="n" value="0">Dejar vacío</button><button class="btn alt chico" name="n" value="medir">Medir tiempos</button></form>
+   <form method="post" action="?r=desbloquear" class="fila mt">{$csrf}<button class="btn alt chico" type="submit">Quitar bloqueos por intentos fallidos</button></form>{$mDatos}</section>
   <section class="card"><h3>Bandeja de avisos (simulada)</h3><p class="nota">Lo que el sistema enviaría.</p><ul>{$avisos}</ul></section>
  </div>
 </div>

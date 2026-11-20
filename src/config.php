@@ -20,9 +20,10 @@ define('EDUNEX_PROXIES', array_filter(array_map('trim', explode(',', getenv('EDU
 define('EDUNEX_SESION_MIN', 20);
 
 // Intentos fallidos permitidos antes de bloquear un rato (contra adivinar contraseñas o códigos).
-define('EDUNEX_MAX_INTENTOS_LOGIN', 5);
-define('EDUNEX_MAX_INTENTOS_CONSULTA', 10);
-define('EDUNEX_BLOQUEO_MIN', 15);
+// Se pueden cambiar en el servidor (Render → Environment). EDUNEX_BLOQUEO_MIN = 0 apaga el bloqueo (solo para pruebas).
+define('EDUNEX_MAX_INTENTOS_LOGIN', (int) (getenv('EDUNEX_MAX_INTENTOS_LOGIN') ?: 5));
+define('EDUNEX_MAX_INTENTOS_CONSULTA', (int) (getenv('EDUNEX_MAX_INTENTOS_CONSULTA') ?: 10));
+define('EDUNEX_BLOQUEO_MIN', getenv('EDUNEX_BLOQUEO_MIN') !== false && getenv('EDUNEX_BLOQUEO_MIN') !== '' ? (int) getenv('EDUNEX_BLOQUEO_MIN') : 2);
 
 /*
  * Usuarios de DEMOSTRACIÓN. Las contraseñas NO se guardan: se guarda su hash (password_hash,

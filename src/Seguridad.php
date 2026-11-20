@@ -125,6 +125,9 @@ final class Seguridad
 
     public static function bloqueado(string $clave, int $max): bool
     {
+        if (EDUNEX_BLOQUEO_MIN <= 0) {
+            return false;                    // bloqueo apagado (solo para pruebas)
+        }
         $d = Almacen::leer('intentos', static fn () => []);
         $x = $d[$clave] ?? null;
         return $x !== null && $x['n'] >= $max && time() - $x['t'] < EDUNEX_BLOQUEO_MIN * 60;

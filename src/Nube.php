@@ -29,6 +29,12 @@ final class Nube
         return self::activa('registro') || self::activa('consulta');
     }
 
+    /** ¿La respuesta parece una tabla (lista de filas, aunque esté vacía)? */
+    public static function esTabla(mixed $d): bool
+    {
+        return is_array($d) && ((isset($d['value']) && is_array($d['value'])) || array_is_list($d) || isset($d['control']) || isset($d['Número de control']));
+    }
+
     /** Todas las filas que regresó un flujo (para traer la tabla Registros completa). */
     public static function filas(mixed $d): array
     {
@@ -98,7 +104,14 @@ final class Nube
         curl_close($ch);
         $ms = (hrtime(true) - $a) / 1e6;
         $json = is_string($cuerpo) && $cuerpo !== '' ? json_decode($cuerpo, true) : null;
+        if (is_string($json)) {
+            $json = json_decode($json, true);        // el flujo mandó el JSON como texto
+        }
+        if (is_array($json) && !isset($json['value']) && isset($json['body'])) {
+            $json = is_string($json['body']) ? json_decode($json['body'], true) : $json['body'];
+        }
         return ['ok' => $cuerpo !== false && $http >= 200 && $http < 300, 'http' => $http, 'datos' => $json, 'ms' => $ms,
+            'crudo' => is_string($cuerpo) ? mb_substr($cuerpo, 0, 600) : '',
             'error' => $error !== '' ? $error : ($http >= 300 ? 'Respuesta HTTP ' . $http : '')];
     }
 
