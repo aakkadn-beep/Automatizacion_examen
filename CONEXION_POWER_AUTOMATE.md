@@ -57,7 +57,7 @@ examen en el Excel, va en la columna `nivel`.
 4. Acción **Respuesta**: código de estado `200`, cuerpo `{"ok": true}`.
 5. Guarda. En el disparador aparece la **dirección HTTP POST**: cópiala.
 
-## 3. Flujo B · Consulta (es tu flujo 1, con un ajuste)
+## 3. Flujo B · Consulta (es tu flujo 1, más sencillo)
 
 1. Disparador **Cuando se recibe una solicitud HTTP** con este esquema:
 
@@ -65,22 +65,20 @@ examen en el Excel, va en la columna `nivel`.
 {"type":"object","properties":{"control":{"type":"string"},"codigo":{"type":"string"}}}
 ```
 
-2. Acción **Enumerar las filas presentes en una tabla** (tabla `Registros`). En «Consulta de filtro»
-   pon esta **expresión** (pestaña «Expresión» o fx), para que con control vacío regrese **toda la tabla**:
-
-   ```
-   if(empty(triggerBody()?['control']), '', concat('control eq ''', triggerBody()?['control'], ''''))
-   ```
-
-   Si Power Automate no acepta el filtro vacío, usa una **Condición**: «control está vacío» →
-   en «Sí», *Enumerar las filas* sin filtro y *Respuesta* con su `value`; en «No», *Enumerar las filas*
-   con `control eq '...'` y *Respuesta* con su `value`.
+2. Acción **Enumerar las filas presentes en una tabla** (tabla de registros) **sin consulta de filtro**.
+   En su «Configuración», activa **Paginación** con umbral 5000 si algún día pasas de 256 filas.
 3. Acción **Respuesta**: código `200`, encabezado `Content-Type: application/json`, cuerpo:
-   el `value` de la acción anterior (la lista de filas).
-4. Guarda y copia la dirección HTTP POST.
+   el `value` de la acción anterior (todas las filas).
 
-El prototipo compara el **código de consulta** con la columna `codigo` de la fila que regresa el flujo:
-si no coincide, no muestra nada. Por eso la columna `codigo` es obligatoria.
+El flujo regresa la tabla completa y **PHP busca la fila** del número de control y compara el código.
+Así el mismo flujo sirve para la consulta, para revisar duplicados antes de registrar y para
+«Traer registros del Excel», y no hay que pelear con filtros de columnas con espacios o acentos.
+
+Nombres de columna que el prototipo entiende (con o sin mayúsculas y acentos): `Número de control`
+(o `control`), `Nombre`, `Carrera`, `Grupo`, `Estatus`, `Referencia`, `Codigo`, `Concepto`, `Nivel`,
+`Fecha de registro`, `Asistido`. La columna del código es obligatoria.
+
+Si en el Excel hay un número de control repetido, el panel lo avisa en rojo: borra la fila que sobra.
 
 ## 3 bis. Flujo C · Cruce de pagos desde el panel (opcional)
 
