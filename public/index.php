@@ -84,8 +84,7 @@ function existeEnExcel(string $control): ?bool
     if (!$r['ok']) {
         return null;
     }
-    $fila = Nube::primeraFila($r['datos']);
-    return $fila !== null && ($fila['control'] ?? '') === $control;
+    return Nube::filaDe($r['datos'], $control) !== null;
 }
 
 /**
@@ -103,9 +102,14 @@ function traerDeExcel(callable $porDefecto): array
         Auditoria::registrar('traer_excel', 'error', 'HTTP ' . $r['http'] . ' · ' . $r['error']);
         return [false, 'El flujo B no respondió (HTTP ' . $r['http'] . '). Se sigue usando la copia del servidor.'];
     }
-    $regs = Nucleo::registrosDesdeExcel(Nube::filas($r['datos']));
+    $filasExcel = Nube::filas($r['datos']);
+    $regs = Nucleo::registrosDesdeExcel($filasExcel);
     $n = count($regs);
-    $pend = Almacen::transaccion('estado', $porDefecto, static function (array &$st) use ($regs) {
+    // números de control que aparecen más de una vez en el Excel (registros duplicados)
+    $cuenta = array_count_values(array_filter(array_map(static fn ($f) => $f['control'] ?? '', $filasExcel)));
+    $dups = array_keys(array_filter($cuenta, static fn ($k) => $k > 1));
+    $pend = Almacen::transaccion('estado', $porDefecto, static function (array &$st) use ($regs, $dups) {
+        $st['duplicados'] = array_map('strval', $dups);
         $enExcel = array_column($regs, 'c');
         $pendientes = array_values(array_filter($st['regs'], static fn ($x) => ($x['sync'] ?? '') === 'error' && !in_array($x['c'], $enExcel, true)));
         $st['regs'] = array_merge($regs, $pendientes);
@@ -212,11 +216,12 @@ if ($metodo === 'POST') {
             // Si está configurado el flujo B, se pregunta al Excel de la Coordinación (ahí el flujo C marca «pagado»).
             if (Nube::activa('consulta') && preg_match('/^\d{8}$/', $c) && $codigo !== '') {
                 $r = Nube::enviar('consulta', ['control' => $c, 'codigo' => $codigo]);
-                $fila = $r['ok'] ? Nube::primeraFila($r['datos']) : null;
+                $fila = $r['ok'] ? Nube::filaDe($r['datos'], $c, $codigo) : null;
                 // El código se valida con el que trae el Excel; si el flujo no lo devuelve, con la copia local.
                 $codigoOk = $fila !== null && (isset($fila['codigo']) && $fila['codigo'] !== '' ? hash_equals(strtoupper($fila['codigo']), $codigo) : $local !== null);
-                if ($fila !== null && ($fila['control'] ?? $c) === $c && $codigoOk) {
-                    $v = resultadoDesdeExcel($fila, $local);
+                if ($r['ok']) {
+                    // Si el Excel respondió, el Excel manda: la copia del servidor ya no se usa para esta consulta.
+                    $v = ($fila !== null && ($fila['control'] ?? $c) === $c && $codigoOk) ? resultadoDesdeExcel($fila, $local) : null;
                 }
                 Auditoria::registrar('power_automate_consulta', $r['ok'] ? ($fila ? 'ok' : 'sin_fila') : 'error',
                     'control ' . $c . ' · HTTP ' . $r['http'] . ' · ' . round($r['ms']) . ' ms' . ($r['error'] ? ' · ' . $r['error'] : '') . ($r['ok'] ? '' : ' · se usó la copia del servidor'));
