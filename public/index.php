@@ -67,13 +67,37 @@ function archivoSubido(): ?string
     return $t;
 }
 
+/**
+ * ¿Ese número de control ya está en el Excel? Se pregunta al flujo B (consulta).
+ * true = sí está, false = no está, null = no se sabe (flujo B sin configurar o sin respuesta).
+ * Sirve porque en Render gratis la copia local se borra al reiniciar: sin esta revisión,
+ * el mismo aspirante podía quedar dos veces en el Excel.
+ */
+function existeEnExcel(string $control): ?bool
+{
+    if (!Nube::activa('consulta')) {
+        return null;
+    }
+    $r = Nube::enviar('consulta', ['control' => $control, 'codigo' => '']);
+    if (!$r['ok']) {
+        return null;
+    }
+    $fila = Nube::primeraFila($r['datos']);
+    return $fila !== null && ($fila['control'] ?? '') === $control;
+}
+
 /** Envía un registro al flujo A de Power Automate (si está configurado) y anota el resultado. */
 function enviarRegistroANube(callable $porDefecto, array $rec): void
 {
     if (!Nube::activa('registro')) {
         return;
     }
-    $r = Nube::enviar('registro', Nube::filaRegistro($rec));
+    // Si ya está en el Excel (por ejemplo, un envío anterior que tardó en responder), no se vuelve a mandar.
+    if (existeEnExcel($rec['c']) === true) {
+        $r = ['ok' => true, 'http' => 0, 'ms' => 0, 'error' => 'ya estaba en el Excel; no se reenvió'];
+    } else {
+        $r = Nube::enviar('registro', Nube::filaRegistro($rec));
+    }
     $estado = $r['ok'] ? 'ok' : 'error';
     Almacen::transaccion('estado', $porDefecto, static function (array &$st) use ($rec, $estado) {
         foreach ($st['regs'] as &$x) {
@@ -119,6 +143,13 @@ if ($metodo === 'POST') {
             $d = ['control' => trim((string) ($_POST['control'] ?? '')), 'nombre' => mb_substr(trim((string) ($_POST['nombre'] ?? '')), 0, 80),
                 'carrera' => (string) ($_POST['carrera'] ?? ''), 'grupo' => (string) ($_POST['grupo'] ?? '')];
             $asistido = $rol === 'coordinador' && !empty($_POST['asistido']);
+            // RF-04: además de la copia local, se revisa el Excel (la copia local se pierde si el servidor se reinicia).
+            if (preg_match('/^\d{8}$/', $d['control']) && existeEnExcel($d['control']) === true) {
+                Auditoria::registrar('registro', 'rechazado', 'control ' . $d['control'] . ': ya está en el Excel');
+                $_SESSION['errores'] = ['control' => 'Este número de control ya está registrado. Consulta tu estatus con tu código.'];
+                $_SESSION['viejo'] = $d;
+                ir('registro');
+            }
             $res = Almacen::transaccion('estado', $porDefecto, static fn (array &$st) => Nucleo::registrar($st, $d, $asistido));
             if (!$res['ok']) {
                 Auditoria::registrar('registro', 'rechazado', 'control ' . $d['control'] . ': ' . implode(' | ', array_keys($res['errores'])));
