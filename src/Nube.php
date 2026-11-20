@@ -57,7 +57,7 @@ final class Nube
             CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_CONNECTTIMEOUT => 5,              // segundos para conectarse
-            CURLOPT_TIMEOUT => 20,                    // segundos máximos de espera
+            CURLOPT_TIMEOUT => 30,                    // segundos máximos de espera (Excel a veces tarda)
             CURLOPT_SSL_VERIFYPEER => true,           // revisa que el certificado de Microsoft sea válido…
             CURLOPT_SSL_VERIFYHOST => 2,              // …y que sea para ese dominio
             CURLOPT_PROTOCOLS => $esHttps ? CURLPROTO_HTTPS : (CURLPROTO_HTTP | CURLPROTO_HTTPS),
