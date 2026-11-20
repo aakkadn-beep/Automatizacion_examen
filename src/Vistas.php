@@ -532,6 +532,7 @@ HTML;
         $paC = Nube::activa('consulta');
         $paX = Nube::activa('cruce');
         $con = Nube::conectado();
+        $avisoDupl = !empty($st['duplicados']) ? '<div class="err">Hay números de control repetidos en el Excel: ' . e(implode(', ', $st['duplicados'])) . '. Revisa la sección 7.</div>' : '';
         $avisoDatos = $con ? '<div class="aviso">Con la conexión activa, «Reiniciar con 60/600» carga aspirantes <b>inventados</b> que no están en el Excel; «Traer registros del Excel» los quita.</div>' : '';
         $simulacion = $con ? '<div class="aviso"><b>Solo simulación:</b> esta sección cambia la copia del servidor, no el Excel. El cruce real lo hace el flujo C en Power Automate (sección 7).</div>' : '';
         $sOk = count(array_filter($st['regs'], static fn ($r) => ($r['sync'] ?? '') === 'ok'));
@@ -540,8 +541,9 @@ HTML;
         $botonSync = $paR ? '<form method="post" action="?r=sincronizar">' . $csrf . '<button class="btn chico alt" type="submit">Reenviar registros pendientes</button></form>' : '';
         $botonTraer = $paC ? '<form method="post" action="?r=traerexcel">' . $csrf . '<button class="btn chico" type="submit">Traer registros del Excel</button></form>' : '';
         $botonCruce = $paX ? '<form method="post" action="?r=cruceexcel">' . $csrf . '<button class="btn chico" type="submit">Ejecutar cruce de pagos (flujo C)</button></form>' : '';
+        $dupl = !empty($st['duplicados']) ? '<div class="err">En el Excel hay números de control repetidos: ' . e(implode(', ', $st['duplicados'])) . '. Borra en el Excel la fila que sobra y pulsa «Traer registros del Excel». Mientras tanto el panel muestra solo una de cada uno.</div>' : '';
         $ultima = !empty($st['excel']) ? '<div class="kv"><span>Datos traídos del Excel</span><b>' . e($st['excel']) . '</b></div>' : '';
-        $nube = '<div class="kv"><span>Flujo A · Registro → Excel</span>' . $estado($paR) . '</div><div class="kv"><span>Flujo B · Consulta ← Excel</span>' . $estado($paC) . '</div>'
+        $nube = $dupl . '<div class="kv"><span>Flujo A · Registro → Excel</span>' . $estado($paR) . '</div><div class="kv"><span>Flujo B · Consulta ← Excel</span>' . $estado($paC) . '</div>'
             . '<div class="kv"><span>Flujo C · Cruce de pagos (botón del panel)</span>' . $estado($paX) . '</div>' . $ultima
             . ($con ? '<p class="nota">Con la conexión activa, el panel muestra lo que hay en la tabla Registros del Excel. Si cambias el Excel a mano o corres el flujo C desde Power Automate, pulsa «Traer registros del Excel».</p>' : '')
             . '<div class="fila">' . $botonTraer . $botonCruce . '</div>'
@@ -562,6 +564,7 @@ HTML;
 <h1>Panel de la Coordinación</h1>
 <p class="nota">Convocatoria enero–junio 2027. <span class="sim">Datos simulados</span> Hoy: <b>{$hoy}</b> · Niveles: {$nivTxt}</p>
 {$avisoEscudo}
+{$avisoDupl}
 {$kpis}
 <nav class="subnav" aria-label="Secciones del panel"><a href="#pagos">Cruce de pagos</a><a href="#excepciones">Excepciones</a><a href="#resultados">Resultados</a><a href="#aspirantes">Aspirantes</a><a href="#fechas">Fechas</a><a href="#recordatorio">Recordatorio</a><a href="#nube">Power Automate</a><a href="#datos">Datos de prueba</a></nav>
 <div class="cols">

@@ -121,9 +121,53 @@ final class Nube
         $fila = [];
         foreach ($d as $k => $v) {
             $k = strtr(mb_strtolower(trim((string) $k)), ['á' => 'a', 'é' => 'e', 'í' => 'i', 'ó' => 'o', 'ú' => 'u']);
+            $k = self::ALIAS[$k] ?? $k;
             $fila[$k] = is_scalar($v) ? trim((string) $v) : '';
         }
+        if (isset($fila['control'])) {
+            $fila['control'] = self::control($fila['control']);
+        }
         return $fila;
+    }
+
+    /** Otros nombres de columna que puede tener la tabla del Excel (ya en minúsculas y sin acentos). */
+    private const ALIAS = [
+        'numero de control' => 'control', 'no. de control' => 'control', 'no de control' => 'control',
+        'num. de control' => 'control', 'numero_de_control' => 'control', 'numerodecontrol' => 'control', 'no_control' => 'control',
+        'codigo de consulta' => 'codigo', 'codigo_de_consulta' => 'codigo',
+        'fecha de registro' => 'fecha_registro', 'fecha registro' => 'fecha_registro',
+        'nombre completo' => 'nombre', 'estado' => 'estatus',
+    ];
+
+    /** Deja el número de control como 8 dígitos aunque Excel lo mande como número (24660001.0). */
+    public static function control(string $v): string
+    {
+        $v = trim($v);
+        if (preg_match('/^(\d+)(\.0+)?$/', $v, $m)) {
+            return $m[1];
+        }
+        return preg_replace('/\D/', '', $v);
+    }
+
+    /**
+     * Busca, entre todas las filas que regresó el flujo, la del número de control pedido.
+     * Si hay más de una (registros repetidos), prefiere la que tenga ese código de consulta.
+     * Así funciona aunque el flujo B regrese la tabla completa sin filtrar.
+     */
+    public static function filaDe(mixed $d, string $control, string $codigo = ''): ?array
+    {
+        $hallazgos = array_values(array_filter(self::filas($d), static fn ($f) => ($f['control'] ?? '') === $control));
+        if (!$hallazgos) {
+            return null;
+        }
+        if ($codigo !== '') {
+            foreach ($hallazgos as $f) {
+                if (isset($f['codigo']) && hash_equals(strtoupper($f['codigo']), strtoupper($codigo))) {
+                    return $f;
+                }
+            }
+        }
+        return $hallazgos[0];
     }
 
     /** Arma lo que se le manda al flujo A con cada registro nuevo (una fila del Excel). */
