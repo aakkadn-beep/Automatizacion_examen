@@ -22,6 +22,17 @@ if ($ruta === '/registro' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 } elseif ($ruta === '/consulta' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     // Como el flujo B recomendado: «Enumerar filas» SIN filtro y regresa toda la tabla;
     // PHP busca la fila del número de control. Encabezados como en el Excel de la autora.
+    // ?modo=todo (por defecto): regresa la tabla completa · ?modo=filtra: solo la fila del control pedido
+    // ?modo=error: responde 400, como cuando la consulta de filtro usa una columna que no existe
+    $modo = $_GET['modo'] ?? 'todo';
+    if ($modo === 'error') {
+        http_response_code(400);
+        echo json_encode(['error' => ['code' => 'InvalidFilterClause', 'message' => "Could not find a property named 'control'"]]);
+        exit;
+    }
+    if ($modo === 'filtra') {
+        $filas = array_values(array_filter($filas, fn ($f) => ($f['control'] ?? '') === ($entrada['control'] ?? '')));
+    }
     $hall = array_map(fn ($f) => ['Número de control' => $f['control'], 'Nombre' => $f['nombre'], 'Carrera' => $f['carrera'],
         'Grupo' => $f['grupo'], 'Estatus' => $f['estatus'], 'Referencia' => $f['referencia'] ?? '', 'Codigo' => $f['codigo'] ?? '',
         'Nivel' => $f['nivel'] ?? ''], $filas);
