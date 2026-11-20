@@ -81,7 +81,8 @@ function existeEnExcel(string $control): ?bool
         return null;
     }
     $r = Nube::enviar('consulta', ['control' => $control, 'codigo' => '']);
-    if (!$r['ok']) {
+    if (!$r['ok'] || !Nube::esTabla($r['datos'])) {
+        Auditoria::registrar('power_automate_duplicado', 'sin_respuesta_valida', 'control ' . $control . ' · HTTP ' . $r['http'] . ' · ' . mb_substr(str_replace(["\n", "\r"], ' ', $r['crudo'] ?? ''), 0, 120));
         return null;
     }
     return Nube::filaDe($r['datos'], $control) !== null;
@@ -101,6 +102,10 @@ function traerDeExcel(callable $porDefecto): array
     if (!$r['ok']) {
         Auditoria::registrar('traer_excel', 'error', 'HTTP ' . $r['http'] . ' · ' . $r['error']);
         return [false, 'El flujo B no respondió (HTTP ' . $r['http'] . '). Se sigue usando la copia del servidor.'];
+    }
+    if (!Nube::esTabla($r['datos'])) {
+        Auditoria::registrar('traer_excel', 'respuesta_no_reconocida', mb_substr($r['crudo'] ?? '', 0, 150));
+        return [false, 'El flujo B respondió, pero no con las filas de la tabla. Usa «Probar conexión con el flujo B» para ver qué responde.'];
     }
     $filasExcel = Nube::filas($r['datos']);
     $regs = Nucleo::registrosDesdeExcel($filasExcel);
@@ -219,11 +224,11 @@ if ($metodo === 'POST') {
                 $fila = $r['ok'] ? Nube::filaDe($r['datos'], $c, $codigo) : null;
                 // El código se valida con el que trae el Excel; si el flujo no lo devuelve, con la copia local.
                 $codigoOk = $fila !== null && (isset($fila['codigo']) && $fila['codigo'] !== '' ? hash_equals(strtoupper($fila['codigo']), $codigo) : $local !== null);
-                if ($r['ok']) {
-                    // Si el Excel respondió, el Excel manda: la copia del servidor ya no se usa para esta consulta.
+                if ($r['ok'] && Nube::esTabla($r['datos'])) {
+                    // Si el Excel respondió con su tabla, el Excel manda: la copia del servidor no se usa.
                     $v = ($fila !== null && ($fila['control'] ?? $c) === $c && $codigoOk) ? resultadoDesdeExcel($fila, $local) : null;
                 }
-                Auditoria::registrar('power_automate_consulta', $r['ok'] ? ($fila ? 'ok' : 'sin_fila') : 'error',
+                Auditoria::registrar('power_automate_consulta', !$r['ok'] ? 'error' : (!Nube::esTabla($r['datos']) ? 'respuesta_no_reconocida' : ($fila ? 'ok' : 'sin_fila')),
                     'control ' . $c . ' · HTTP ' . $r['http'] . ' · ' . round($r['ms']) . ' ms' . ($r['error'] ? ' · ' . $r['error'] : '') . ($r['ok'] ? '' : ' · se usó la copia del servidor'));
             }
             if ($v === null) {
@@ -371,6 +376,34 @@ if ($metodo === 'POST') {
             flash('nube', $mal ? 'aviso' : 'ok', "Enviados al Excel: $ok. Con error: $mal.");
             ir('panel');
 
+        case 'probarb':
+            exigirRol($rol, 'panel');
+            if (!Nube::activa('consulta')) {
+                flash('nube', 'mal', 'El flujo B no está configurado (variable EDUNEX_PA_CONSULTA vacía).');
+                ir('panel');
+            }
+            $r = Nube::enviar('consulta', ['control' => '', 'codigo' => '']);
+            $filas = Nube::filas($r['datos']);
+            $cols = $filas ? implode(', ', array_keys($filas[0])) : '—';
+            $diag = ['HTTP ' . $r['http'] . ' en ' . round($r['ms']) . ' ms' . ($r['error'] ? ' (' . $r['error'] . ')' : ''),
+                'Respuesta reconocida como tabla: ' . (Nube::esTabla($r['datos']) ? 'sí' : 'NO'),
+                'Filas recibidas: ' . count($filas),
+                'Columnas (como las entiende el prototipo): ' . $cols,
+                'Columna control: ' . ($filas && isset($filas[0]['control']) ? 'sí' : 'NO') . ' · columna codigo: ' . ($filas && isset($filas[0]['codigo']) ? 'sí' : 'NO'),
+                'Inicio de la respuesta: ' . preg_replace('/("codigo"\s*:\s*")[^"]*/i', '$1****', mb_substr($r['crudo'] ?? '', 0, 300))];
+            $_SESSION['diag'] = $diag;
+            Auditoria::registrar('probar_flujo_b', Nube::esTabla($r['datos']) ? 'ok' : 'respuesta_no_reconocida', 'HTTP ' . $r['http'] . ' · ' . count($filas) . ' filas');
+            ir('panel');
+
+        case 'desbloquear':
+            exigirRol($rol, 'panel');
+            Almacen::transaccion('intentos', static fn () => [], static function (array &$d) {
+                $d = [];
+            });
+            Auditoria::registrar('desbloquear_intentos', 'ok');
+            flash('datos', 'ok', 'Se quitaron todos los bloqueos por intentos fallidos.');
+            ir('panel');
+
         case 'traerexcel':
             exigirRol($rol, 'panel');
             [$ok, $msg] = traerDeExcel($porDefecto);
@@ -493,7 +526,9 @@ switch ($r) {
             'carrera' => (string) ($_GET['carrera'] ?? ''), 'grupo' => (string) ($_GET['grupo'] ?? '')];
         $esquema = Seguridad::esHttps() ? 'https' : 'http';
         $url = $esquema . '://' . preg_replace('/[^A-Za-z0-9.:\-\[\]]/', '', $_SERVER['HTTP_HOST'] ?? 'localhost') . '/?r=registro';
-        echo Vistas::pagina('Panel', 'panel', Vistas::panel($st, $f, tomarFlash(), $_SESSION['prev'] ?? null, $url), $rol);
+        $diag = $_SESSION['diag'] ?? null;
+        unset($_SESSION['diag']);
+        echo Vistas::pagina('Panel', 'panel', Vistas::panel($st, $f, tomarFlash(), $_SESSION['prev'] ?? null, $url, $diag), $rol);
         exit;
 
     case 'caja':
