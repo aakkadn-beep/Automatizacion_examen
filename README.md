@@ -3,6 +3,9 @@
 Registro automatizado de aspirantes al examen de ubicación de lengua extranjera (TecNM Campus Matehuala).
 Proyecto escolar de Fundamentos de Ingeniería de Software (SCC-1007). **Todos los datos son simulados.**
 
+## Prototipo
+https://automatizacion-examen.onrender.com
+
 ## Qué es
 
 Un sitio web hecho solo con PHP 8.3. No hay archivos `.html` ni JavaScript: PHP genera en el servidor
