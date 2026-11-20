@@ -530,11 +530,21 @@ HTML;
         // Conexión con Power Automate
         $paR = Nube::activa('registro');
         $paC = Nube::activa('consulta');
+        $paX = Nube::activa('cruce');
+        $con = Nube::conectado();
+        $avisoDatos = $con ? '<div class="aviso">Con la conexión activa, «Reiniciar con 60/600» carga aspirantes <b>inventados</b> que no están en el Excel; «Traer registros del Excel» los quita.</div>' : '';
+        $simulacion = $con ? '<div class="aviso"><b>Solo simulación:</b> esta sección cambia la copia del servidor, no el Excel. El cruce real lo hace el flujo C en Power Automate (sección 7).</div>' : '';
         $sOk = count(array_filter($st['regs'], static fn ($r) => ($r['sync'] ?? '') === 'ok'));
         $sErr = count(array_filter($st['regs'], static fn ($r) => ($r['sync'] ?? '') === 'error'));
         $estado = static fn (bool $b) => $b ? '<span class="pill p-pag">Conectado</span>' : '<span class="pill p-reg">Sin configurar</span>';
         $botonSync = $paR ? '<form method="post" action="?r=sincronizar">' . $csrf . '<button class="btn chico alt" type="submit">Reenviar registros pendientes</button></form>' : '';
+        $botonTraer = $paC ? '<form method="post" action="?r=traerexcel">' . $csrf . '<button class="btn chico" type="submit">Traer registros del Excel</button></form>' : '';
+        $botonCruce = $paX ? '<form method="post" action="?r=cruceexcel">' . $csrf . '<button class="btn chico" type="submit">Ejecutar cruce de pagos (flujo C)</button></form>' : '';
+        $ultima = !empty($st['excel']) ? '<div class="kv"><span>Datos traídos del Excel</span><b>' . e($st['excel']) . '</b></div>' : '';
         $nube = '<div class="kv"><span>Flujo A · Registro → Excel</span>' . $estado($paR) . '</div><div class="kv"><span>Flujo B · Consulta ← Excel</span>' . $estado($paC) . '</div>'
+            . '<div class="kv"><span>Flujo C · Cruce de pagos (botón del panel)</span>' . $estado($paX) . '</div>' . $ultima
+            . ($con ? '<p class="nota">Con la conexión activa, el panel muestra lo que hay en la tabla Registros del Excel. Si cambias el Excel a mano o corres el flujo C desde Power Automate, pulsa «Traer registros del Excel».</p>' : '')
+            . '<div class="fila">' . $botonTraer . $botonCruce . '</div>'
             . ($paR ? '<div class="kv"><span>Registros enviados al Excel</span><b>' . $sOk . ' bien · ' . $sErr . ' con error</b></div>' : '')
             . '<p class="nota">Las direcciones de los flujos se configuran en el servidor (variables EDUNEX_PA_REGISTRO y EDUNEX_PA_CONSULTA), nunca en el código. El cruce de pagos real lo hace el flujo C en Power Automate.</p>' . $botonSync;
 
@@ -555,14 +565,14 @@ HTML;
 {$kpis}
 <nav class="subnav" aria-label="Secciones del panel"><a href="#pagos">Cruce de pagos</a><a href="#excepciones">Excepciones</a><a href="#resultados">Resultados</a><a href="#aspirantes">Aspirantes</a><a href="#fechas">Fechas</a><a href="#recordatorio">Recordatorio</a><a href="#nube">Power Automate</a><a href="#datos">Datos de prueba</a></nav>
 <div class="cols">
- <section class="card" id="pagos"><h3>1. Cruce de pagos</h3><p class="nota">Carga el reporte de pagos (CSV con referencia, monto y fecha).</p>
+ <section class="card" id="pagos"><h3>1. Cruce de pagos</h3>{$simulacion}<p class="nota">Carga el reporte de pagos (CSV con referencia, monto y fecha).</p>
   <form method="post" action="?r=pagos" enctype="multipart/form-data">{$csrf}<div class="field"><label for="fp">Archivo de pagos</label><input id="fp" name="archivo" type="file" accept=".csv,text/csv"></div>
    <div class="fila"><button class="btn" type="submit" name="modo" value="archivo">Cruzar archivo</button><button class="btn alt" type="submit" name="modo" value="ejemplo">Usar reporte de ejemplo</button></div></form>{$mPagos}</section>
  <section class="card" id="resultados"><h3>2. Resultado del examen</h3><p class="nota">Carga el archivo de la plataforma del examen (CSV con control y nivel). Revisas el resumen y confirmas.</p>
   <form method="post" action="?r=resultados" enctype="multipart/form-data">{$csrf}<div class="field"><label for="fr">Archivo de resultados</label><input id="fr" name="archivo" type="file" accept=".csv,text/csv"></div>
    <div class="fila"><button class="btn" type="submit" name="modo" value="archivo">Revisar archivo</button><button class="btn alt" type="submit" name="modo" value="ejemplo">Usar resultado de ejemplo</button></div></form>{$mRes}{$confirmar}</section>
 </div>
-<section class="card" id="excepciones"><h3>3. Excepciones: pagos que el sistema no pudo identificar</h3>{$mExc}{$exc}</section>
+<section class="card" id="excepciones"><h3>3. Excepciones: pagos que el sistema no pudo identificar</h3>{$simulacion}{$mExc}{$exc}</section>
 <section class="card" id="aspirantes"><h3>4. Aspirantes <span class="nota">({$cuenta})</span></h3>
  <form method="get" class="filtros"><input type="hidden" name="r" value="panel">
   <div class="field"><label for="q">Buscar por control o nombre</label><input id="q" name="q" value="{$fq}" placeholder="Ej. 2624010"></div>
@@ -588,7 +598,7 @@ HTML;
   <section class="card" id="recordatorio"><h3>6. Recordatorio de pago</h3><p class="nota">{$remTxt}</p>
    <div class="fila"><form method="post" action="?r=recordatorio">{$csrf}<button class="btn" type="submit">Enviar lista a la Coordinación (simulado)</button></form><a class="btn alt" href="?r=descargar&amp;que=pendientes">Descargar lista</a></div>{$mRem}</section>
   <section class="card" id="nube"><h3>7. Conexión con Power Automate</h3>{$nube}{$mNube}</section>
-  <section class="card" id="datos"><h3>8. Datos de prueba</h3>
+  <section class="card" id="datos"><h3>8. Datos de prueba</h3>{$avisoDatos}
    <p class="nota">Son tres archivos porque simulan tres fuentes: los <b>registros</b> (lo que ya está en el sistema), el <b>reporte de pagos</b> (lo que entrega caja o el banco) y los <b>resultados</b> (lo que exporta la plataforma del examen, que no controla el Tec). Los de ejemplo se arman con los registros de ahora, así siempre coinciden.</p>
    <div class="fila"><a class="btn alt chico" href="?r=descargar&amp;que=aspirantes">Registros</a><a class="btn alt chico" href="?r=descargar&amp;que=ejpagos">Pagos de ejemplo</a><a class="btn alt chico" href="?r=descargar&amp;que=ejresultados">Resultados de ejemplo</a></div>
    <form method="post" action="?r=datos" class="fila mt">{$csrf}<button class="btn alt chico" name="n" value="60">Reiniciar con 60</button><button class="btn alt chico" name="n" value="600">Reiniciar con 600</button><button class="btn alt chico" name="n" value="0">Dejar vacío</button><button class="btn alt chico" name="n" value="medir">Medir tiempos</button></form>{$mDatos}</section>

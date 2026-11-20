@@ -212,6 +212,33 @@ final class Nucleo
         return ['ok' => true, 'rec' => $rec];
     }
 
+    /** Convierte las filas de la tabla Registros del Excel en registros del sistema.
+     *  Lo que falte (referencia, concepto) se calcula con las mismas reglas RN-04. */
+    public static function registrosDesdeExcel(array $filas): array
+    {
+        $regs = [];
+        foreach ($filas as $f) {
+            $c = preg_replace('/\D/', '', (string) ($f['control'] ?? ''));
+            if (!preg_match('/^\d{8}$/', $c)) {
+                continue;                       // fila vacía o sin número de control válido
+            }
+            $n = trim((string) ($f['nombre'] ?? ''));
+            $niv = strtoupper(trim((string) ($f['nivel'] ?? '')));
+            $est = mb_strtolower(trim((string) ($f['estatus'] ?? '')));
+            $regs[$c] = [
+                'c' => $c, 'n' => $n, 'ca' => (string) ($f['carrera'] ?? ''), 'g' => strtoupper((string) ($f['grupo'] ?? '')),
+                'st' => ($est === 'pagado' || $niv !== '') ? 'Pagado' : 'Registrado',
+                'niv' => in_array($niv, self::NIVELES, true) ? $niv : '', 'pub' => in_array($niv, self::NIVELES, true),
+                'code' => strtoupper(trim((string) ($f['codigo'] ?? ''))),
+                'ref' => ($f['referencia'] ?? '') !== '' ? preg_replace('/\D/', '', (string) $f['referencia']) : self::referencia($c),
+                'con' => ($f['concepto'] ?? '') !== '' ? (string) $f['concepto'] : self::concepto($n),
+                'asistido' => in_array(mb_strtolower((string) ($f['asistido'] ?? '')), ['sí', 'si', 'true', '1'], true),
+                'fReg' => (string) ($f['fecha_registro'] ?? ''), 'fPago' => '', 'sync' => 'ok',
+            ];
+        }
+        return array_values($regs);     // si un control se repite en el Excel, queda una sola vez
+    }
+
     /* ------------------------------------------------------------------ consulta
        RF-13, RF-17, RNF-05, RNF-06 */
 

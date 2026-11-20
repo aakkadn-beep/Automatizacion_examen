@@ -9,8 +9,10 @@ declare(strict_types=1);
  * Así el prototipo usa los flujos y el Excel de la cuenta institucional:
  *   - Flujo A (registro): cada registro nuevo se agrega como fila en la tabla «Registros» del Excel.
  *   - Flujo B (consulta): busca en el Excel por número de control y código y devuelve la fila.
- *   - Flujo C (cruce de pagos): ya existe en Power Automate y marca «pagado» en el Excel;
- *     por eso la consulta, al leer del Excel, ve el estatus actualizado.
+ *   - Flujo C (cruce de pagos): marca «pagado» en el Excel. Si su disparador es HTTP
+ *     (variable EDUNEX_PA_CRUCE), el panel lo puede ejecutar con un botón.
+ *   - «Traer registros del Excel»: el panel le pide al flujo B la tabla completa (control vacío)
+ *     y reemplaza su copia local; así ve lo mismo que el Excel, incluidos los borrados.
  *
  * Las direcciones de los flujos se ponen en variables de entorno (en Render: Environment):
  *   EDUNEX_PA_REGISTRO   y   EDUNEX_PA_CONSULTA
@@ -19,7 +21,35 @@ declare(strict_types=1);
  */
 final class Nube
 {
-    private const VARIABLES = ['registro' => 'EDUNEX_PA_REGISTRO', 'consulta' => 'EDUNEX_PA_CONSULTA'];
+    private const VARIABLES = ['registro' => 'EDUNEX_PA_REGISTRO', 'consulta' => 'EDUNEX_PA_CONSULTA', 'cruce' => 'EDUNEX_PA_CRUCE'];
+
+    /** ¿Hay al menos un flujo configurado? Entonces el Excel es la fuente de los datos. */
+    public static function conectado(): bool
+    {
+        return self::activa('registro') || self::activa('consulta');
+    }
+
+    /** Todas las filas que regresó un flujo (para traer la tabla Registros completa). */
+    public static function filas(mixed $d): array
+    {
+        if (is_array($d) && isset($d['value']) && is_array($d['value'])) {
+            $d = $d['value'];
+        }
+        if (!is_array($d)) {
+            return [];
+        }
+        if (!array_is_list($d)) {
+            $d = [$d];
+        }
+        $out = [];
+        foreach ($d as $x) {
+            $f = self::primeraFila($x);
+            if ($f !== null) {
+                $out[] = $f;
+            }
+        }
+        return $out;
+    }
 
     private static function url(string $flujo): string
     {
