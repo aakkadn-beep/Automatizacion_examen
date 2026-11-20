@@ -20,7 +20,9 @@ $metodo = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $rol = Seguridad::rol();
 
 /** Estado de la base simulada (se crea con 60 aspirantes ficticios la primera vez). */
-$porDefecto = static fn () => Nucleo::nuevoConDatos(60);
+/** Estado inicial: si hay flujos conectados, empieza vacío y los datos vienen del Excel;
+ *  si no, empieza con 60 aspirantes ficticios para demostrar. */
+$porDefecto = static fn () => Nube::conectado() ? Nucleo::nuevoEstado() : Nucleo::nuevoConDatos(60);
 
 function ir(string $destino): never
 {
@@ -84,6 +86,39 @@ function existeEnExcel(string $control): ?bool
     }
     $fila = Nube::primeraFila($r['datos']);
     return $fila !== null && ($fila['control'] ?? '') === $control;
+}
+
+/**
+ * Trae la tabla Registros completa del Excel (flujo B con control vacío) y reemplaza la copia local.
+ * Se conservan solo los registros locales que todavía no llegaron al Excel (envío con error).
+ * Devuelve [ok, mensaje].
+ */
+function traerDeExcel(callable $porDefecto): array
+{
+    if (!Nube::activa('consulta')) {
+        return [false, 'El flujo B (consulta) no está configurado.'];
+    }
+    $r = Nube::enviar('consulta', ['control' => '', 'codigo' => '']);
+    if (!$r['ok']) {
+        Auditoria::registrar('traer_excel', 'error', 'HTTP ' . $r['http'] . ' · ' . $r['error']);
+        return [false, 'El flujo B no respondió (HTTP ' . $r['http'] . '). Se sigue usando la copia del servidor.'];
+    }
+    $regs = Nucleo::registrosDesdeExcel(Nube::filas($r['datos']));
+    $n = count($regs);
+    $pend = Almacen::transaccion('estado', $porDefecto, static function (array &$st) use ($regs) {
+        $enExcel = array_column($regs, 'c');
+        $pendientes = array_values(array_filter($st['regs'], static fn ($x) => ($x['sync'] ?? '') === 'error' && !in_array($x['c'], $enExcel, true)));
+        $st['regs'] = array_merge($regs, $pendientes);
+        // las excepciones de pago que apuntaban a aspirantes que ya no existen dejan de tener sentido
+        $st['exc'] = array_values(array_filter($st['exc'], static fn ($e) => $e['kind'] !== 'pago'));
+        $st['excel'] = date('Y-m-d H:i');
+        return count($pendientes);
+    });
+    Auditoria::registrar('traer_excel', 'ok', $n . ' registros del Excel' . ($pend ? ' · ' . $pend . ' pendientes de enviar' : ''));
+    if ($n === 0) {
+        return [true, 'El Excel no devolvió registros. Si tu tabla sí tiene filas, revisa que el flujo B devuelva todas cuando el control llega vacío (CONEXION_POWER_AUTOMATE.md, paso 3).'];
+    }
+    return [true, "Se trajeron $n registros del Excel." . ($pend ? " Además hay $pend registros que todavía no llegan al Excel." : '')];
 }
 
 /** Envía un registro al flujo A de Power Automate (si está configurado) y anota el resultado. */
@@ -331,6 +366,28 @@ if ($metodo === 'POST') {
             flash('nube', $mal ? 'aviso' : 'ok', "Enviados al Excel: $ok. Con error: $mal.");
             ir('panel');
 
+        case 'traerexcel':
+            exigirRol($rol, 'panel');
+            [$ok, $msg] = traerDeExcel($porDefecto);
+            flash('nube', $ok ? 'ok' : 'mal', $msg);
+            ir('panel');
+
+        case 'cruceexcel':
+            exigirRol($rol, 'panel');
+            if (!Nube::activa('cruce')) {
+                flash('nube', 'mal', 'El flujo C (cruce de pagos) no está configurado con disparador HTTP.');
+                ir('panel');
+            }
+            $r = Nube::enviar('cruce', ['origen' => 'panel', 'usuario' => Seguridad::usuario()]);
+            Auditoria::registrar('power_automate_cruce', $r['ok'] ? 'ok' : 'error', 'HTTP ' . $r['http'] . ' · ' . round($r['ms']) . ' ms' . ($r['error'] ? ' · ' . $r['error'] : ''));
+            if (!$r['ok']) {
+                flash('nube', 'mal', 'El flujo C no respondió bien (HTTP ' . $r['http'] . '). Revisa su historial de ejecuciones en Power Automate.');
+                ir('panel');
+            }
+            [$ok, $msg] = traerDeExcel($porDefecto);
+            flash('nube', $ok ? 'ok' : 'aviso', 'Cruce de pagos ejecutado en Power Automate. ' . $msg);
+            ir('panel');
+
         case 'recordatorio':
             exigirRol($rol, 'panel');
             $res = Almacen::transaccion('estado', $porDefecto, static fn (array &$st) => Nucleo::enviarRecordatorio($st));
@@ -422,6 +479,11 @@ switch ($r) {
     case 'panel':
         exigirRol($rol, 'panel');
         $st = Almacen::leer('estado', $porDefecto);
+        if (Nube::activa('consulta') && empty($st['excel'])) {
+            [$ok, $msg] = traerDeExcel($porDefecto);     // primera vez (o tras reiniciar el servidor)
+            flash('nube', $ok ? 'ok' : 'aviso', $msg);
+            $st = Almacen::leer('estado', $porDefecto);
+        }
         $f = ['q' => mb_substr((string) ($_GET['q'] ?? ''), 0, 60), 'estatus' => (string) ($_GET['estatus'] ?? ''),
             'carrera' => (string) ($_GET['carrera'] ?? ''), 'grupo' => (string) ($_GET['grupo'] ?? '')];
         $esquema = Seguridad::esHttps() ? 'https' : 'http';
@@ -431,6 +493,9 @@ switch ($r) {
 
     case 'caja':
         exigirRol($rol, 'caja');
+        if (Nube::activa('consulta')) {
+            traerDeExcel($porDefecto);                   // caja siempre ve lo que dice el Excel
+        }
         echo Vistas::pagina('Reporte para caja', 'caja', Vistas::caja(Almacen::leer('estado', $porDefecto)), $rol);
         exit;
 
