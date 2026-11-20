@@ -13,6 +13,12 @@ Aspirante ──► Prototipo en PHP (pantallas, validación, seguridad, bitáco
              Flujo C: cruce de pagos (el que ya tienes) → marca «pagado»
 ```
 
+**Con la conexión activa, el Excel manda.** El panel ya no arranca con los 60 aspirantes inventados:
+al abrirlo trae la tabla `Registros` completa del Excel (botón «Traer registros del Excel»). Si borras
+o cambias filas en el Excel, pulsa ese botón y el panel queda igual que el Excel. Caja siempre ve lo
+que dice el Excel. El cruce de pagos y las excepciones del panel quedan como **simulación** (no
+cambian el Excel); el cruce real es el flujo C.
+
 Por qué así: Power Automate y Excel son la solución recomendada al Tec (cuenta institucional, sin
 costo extra, el Coordinador ya usa Excel). PHP pone las pantallas, valida y protege. Además, en un
 hosting gratuito sin disco permanente (como Render gratis), los datos del servidor se borran al
@@ -59,14 +65,31 @@ examen en el Excel, va en la columna `nivel`.
 {"type":"object","properties":{"control":{"type":"string"},"codigo":{"type":"string"}}}
 ```
 
-2. Acción **Enumerar las filas presentes en una tabla** (tabla `Registros`), en «Consulta de filtro»:
-   `control eq '@{triggerBody()?['control']}'`
+2. Acción **Enumerar las filas presentes en una tabla** (tabla `Registros`). En «Consulta de filtro»
+   pon esta **expresión** (pestaña «Expresión» o fx), para que con control vacío regrese **toda la tabla**:
+
+   ```
+   if(empty(triggerBody()?['control']), '', concat('control eq ''', triggerBody()?['control'], ''''))
+   ```
+
+   Si Power Automate no acepta el filtro vacío, usa una **Condición**: «control está vacío» →
+   en «Sí», *Enumerar las filas* sin filtro y *Respuesta* con su `value`; en «No», *Enumerar las filas*
+   con `control eq '...'` y *Respuesta* con su `value`.
 3. Acción **Respuesta**: código `200`, encabezado `Content-Type: application/json`, cuerpo:
    el `value` de la acción anterior (la lista de filas).
 4. Guarda y copia la dirección HTTP POST.
 
 El prototipo compara el **código de consulta** con la columna `codigo` de la fila que regresa el flujo:
 si no coincide, no muestra nada. Por eso la columna `codigo` es obligatoria.
+
+## 3 bis. Flujo C · Cruce de pagos desde el panel (opcional)
+
+Tu flujo C cruza la tabla de pagos con `Registros` y marca `pagado`. Para ejecutarlo con un botón
+del panel, cambia su disparador por **Cuando se recibe una solicitud HTTP** (sin esquema), agrega al
+final una acción **Respuesta** con código `200`, guarda y copia la dirección. Ponla en la variable
+`EDUNEX_PA_CRUCE`. Al pulsar «Ejecutar cruce de pagos (flujo C)», el panel lo ejecuta y luego trae los
+registros del Excel ya actualizados. Si prefieres dejar el disparador manual, ejecútalo en Power
+Automate y después pulsa «Traer registros del Excel».
 
 ## 4. Poner las direcciones en el servidor (nunca en GitHub)
 
@@ -79,6 +102,7 @@ En Render: tu servicio → **Environment** → **Add Environment Variable**:
 |---|---|
 | `EDUNEX_PA_REGISTRO` | la dirección HTTP POST del flujo A |
 | `EDUNEX_PA_CONSULTA` | la dirección HTTP POST del flujo B |
+| `EDUNEX_PA_CRUCE` | opcional: la dirección HTTP POST del flujo C |
 | `EDUNEX_PROXIES` | `*` (Render atiende HTTPS y le pasa la petición al contenedor) |
 
 Guarda y Render vuelve a desplegar. En tu computadora (PowerShell), antes de `php -S`:
