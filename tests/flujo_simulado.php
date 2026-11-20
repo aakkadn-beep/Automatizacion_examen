@@ -4,7 +4,7 @@
  * Se corre con:  php -S 127.0.0.1:8090 tests/flujo_simulado.php
  * Guarda las "filas del Excel" en /tmp/excel_simulado.json.
  *   POST /registro  {control, nombre, ...}  → agrega la fila (como «Agregar una fila a una tabla»)
- *   POST /consulta  {control, codigo}       → {"value":[fila]} (como «Enumerar filas» con filtro)
+ *   POST /consulta  {control, codigo}       → {"value":[fila]} (como «Enumerar filas» filtrando por control)
  *   GET  /pagar?control=...                 → marca «pagado» (lo que haría el flujo C)
  */
 $archivo = '/tmp/excel_simulado.json';
@@ -17,7 +17,8 @@ if ($ruta === '/registro' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     file_put_contents($archivo, json_encode($filas, JSON_UNESCAPED_UNICODE));
     echo json_encode(['ok' => true]);
 } elseif ($ruta === '/consulta' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-    $hall = array_values(array_filter($filas, fn ($f) => ($f['control'] ?? '') === ($entrada['control'] ?? '') && ($f['codigo'] ?? '') === ($entrada['codigo'] ?? '')));
+    // Igual que el flujo B de la guía: filtra solo por número de control; PHP compara el código.
+    $hall = array_values(array_filter($filas, fn ($f) => ($f['control'] ?? '') === ($entrada['control'] ?? '')));
     // Nombres de columna como en Excel (con mayúscula), para probar que el prototipo los entiende.
     $hall = array_map(fn ($f) => ['Control' => $f['control'], 'Nombre' => $f['nombre'], 'Carrera' => $f['carrera'], 'Grupo' => $f['grupo'],
         'Estatus' => $f['estatus'], 'Nivel' => $f['nivel'] ?? '', 'Codigo' => $f['codigo']], $hall);
