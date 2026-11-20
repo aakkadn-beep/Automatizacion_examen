@@ -70,8 +70,34 @@ function archivoSubido(): ?string
 }
 
 /**
- * ¿Ese número de control ya está en el Excel? Se pregunta al flujo B (consulta).
- * true = sí está, false = no está, null = no se sabe (flujo B sin configurar o sin respuesta).
+ * Busca un número de control en el Excel a través del flujo B. Funciona con las dos formas del flujo:
+ *   1) el flujo filtra por número de control y regresa esa fila;
+ *   2) el flujo regresa la tabla completa (sin filtro) y PHP busca la fila.
+ * Primero pregunta por el control; si no viene la fila (o el filtro falla), pide la tabla completa.
+ * Devuelve ['fila' => fila o null, 'seguro' => true si el Excel respondió con su tabla, 'detalle' => texto para la bitácora].
+ */
+function buscarEnExcel(string $control, string $codigo = ''): array
+{
+    if (!Nube::activa('consulta')) {
+        return ['fila' => null, 'seguro' => false, 'detalle' => 'flujo B sin configurar'];
+    }
+    $r1 = Nube::enviar('consulta', ['control' => $control, 'codigo' => $codigo]);
+    $t1 = $r1['ok'] && Nube::esTabla($r1['datos']);
+    if ($t1 && ($f = Nube::filaDe($r1['datos'], $control, $codigo)) !== null) {
+        return ['fila' => $f, 'seguro' => true, 'detalle' => 'HTTP ' . $r1['http'] . ' · ' . round($r1['ms']) . ' ms'];
+    }
+    $r2 = Nube::enviar('consulta', ['control' => '', 'codigo' => '']);
+    $t2 = $r2['ok'] && Nube::esTabla($r2['datos']);
+    $det = 'HTTP ' . $r1['http'] . ($t1 ? '' : ' (sin tabla)') . ' y ' . $r2['http'] . ($t2 ? ' tabla completa' : ' (sin tabla)')
+        . ($t1 || $t2 ? '' : ' · ' . mb_substr(str_replace(["\n", "\r"], ' ', $r1['crudo'] ?: $r1['error']), 0, 100));
+    if ($t2) {
+        return ['fila' => Nube::filaDe($r2['datos'], $control, $codigo), 'seguro' => true, 'detalle' => $det];
+    }
+    return ['fila' => null, 'seguro' => $t1, 'detalle' => $det];
+}
+
+/**
+ * ¿Ese número de control ya está en el Excel? true = sí, false = no, null = no se pudo saber.
  * Sirve porque en Render gratis la copia local se borra al reiniciar: sin esta revisión,
  * el mismo aspirante podía quedar dos veces en el Excel.
  */
@@ -80,12 +106,15 @@ function existeEnExcel(string $control): ?bool
     if (!Nube::activa('consulta')) {
         return null;
     }
-    $r = Nube::enviar('consulta', ['control' => $control, 'codigo' => '']);
-    if (!$r['ok'] || !Nube::esTabla($r['datos'])) {
-        Auditoria::registrar('power_automate_duplicado', 'sin_respuesta_valida', 'control ' . $control . ' · HTTP ' . $r['http'] . ' · ' . mb_substr(str_replace(["\n", "\r"], ' ', $r['crudo'] ?? ''), 0, 120));
+    $b = buscarEnExcel($control);
+    if ($b['fila'] !== null) {
+        return true;
+    }
+    if (!$b['seguro']) {
+        Auditoria::registrar('power_automate_duplicado', 'sin_respuesta_valida', 'control ' . $control . ' · ' . $b['detalle']);
         return null;
     }
-    return Nube::filaDe($r['datos'], $control) !== null;
+    return false;
 }
 
 /**
@@ -218,18 +247,18 @@ if ($metodo === 'POST') {
             $st = Almacen::leer('estado', $porDefecto);
             $local = Nucleo::consultar($st, $c, $codigo);
             $v = $local;
-            // Si está configurado el flujo B, se pregunta al Excel de la Coordinación (ahí el flujo C marca «pagado»).
+            // Si está configurado el flujo B, se pregunta al Excel (ahí el flujo C marca «pagado»).
             if (Nube::activa('consulta') && preg_match('/^\d{8}$/', $c) && $codigo !== '') {
-                $r = Nube::enviar('consulta', ['control' => $c, 'codigo' => $codigo]);
-                $fila = $r['ok'] ? Nube::filaDe($r['datos'], $c, $codigo) : null;
-                // El código se valida con el que trae el Excel; si el flujo no lo devuelve, con la copia local.
+                $b = buscarEnExcel($c, $codigo);
+                $fila = $b['fila'];
+                // El código se valida con el que trae el Excel; si esa fila no tiene código, con la copia local.
                 $codigoOk = $fila !== null && (isset($fila['codigo']) && $fila['codigo'] !== '' ? hash_equals(strtoupper($fila['codigo']), $codigo) : $local !== null);
-                if ($r['ok'] && Nube::esTabla($r['datos'])) {
-                    // Si el Excel respondió con su tabla, el Excel manda: la copia del servidor no se usa.
-                    $v = ($fila !== null && ($fila['control'] ?? $c) === $c && $codigoOk) ? resultadoDesdeExcel($fila, $local) : null;
+                if ($fila !== null && $codigoOk) {
+                    $v = resultadoDesdeExcel($fila, $local);       // el Excel tiene el estatus más reciente
                 }
-                Auditoria::registrar('power_automate_consulta', !$r['ok'] ? 'error' : (!Nube::esTabla($r['datos']) ? 'respuesta_no_reconocida' : ($fila ? 'ok' : 'sin_fila')),
-                    'control ' . $c . ' · HTTP ' . $r['http'] . ' · ' . round($r['ms']) . ' ms' . ($r['error'] ? ' · ' . $r['error'] : '') . ($r['ok'] ? '' : ' · se usó la copia del servidor'));
+                // Si el Excel no lo tiene (o no respondió), vale la copia del servidor: es un registro hecho en este sitio.
+                Auditoria::registrar('power_automate_consulta', $fila !== null ? ($codigoOk ? 'ok' : 'codigo_no_coincide') : ($b['seguro'] ? 'sin_fila' : 'sin_respuesta_valida'),
+                    'control ' . $c . ' · ' . $b['detalle'] . ($v !== null && ($fila === null || !$codigoOk) ? ' · se usó la copia del servidor' : ''));
             }
             if ($v === null) {
                 Seguridad::fallo($clave);
