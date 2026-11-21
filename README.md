@@ -3,6 +3,11 @@
 Registro automatizado de aspirantes al examen de ubicación de lengua extranjera (TecNM Campus Matehuala).
 Proyecto escolar de Fundamentos de Ingeniería de Software (SCC-1007). **Todos los datos son simulados.**
 
+- **Alumna:** Kenia Guadalupe Hernández Torres · 24660123 · 5to Sistemas
+- **Materia:** Fundamentos de Ingeniería de Software (SCC-1007)
+- **Docente:** Garza Ortega Jesús Alberto
+- **Empresa ficticia:** EduNex Systems
+
 ## Prototipo
 https://automatizacion-examen.onrender.com
 
