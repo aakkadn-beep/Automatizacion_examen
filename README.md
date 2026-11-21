@@ -26,6 +26,7 @@ Interfaz de portal institucional: escudo del Tec, banner con las fechas y botone
 Usuarios de demostración: `coordinador` / `edunex2026` y `caja` / `caja2026`.
 
 ## Archivos
+Documentos de la práctica (E1 a libro final): carpeta documentos/
 
 ```
 public/index.php     Única puerta de entrada (la única carpeta que ve el navegador)
